@@ -8,7 +8,7 @@ matplotlib.use("Agg")
 # import the necessary packages
 from keras.preprocessing.image import ImageDataGenerator
 from keras.optimizers import SGD
-from pyimagesearch.resnet import ResNet
+from myfiles.resnet import ResNet
 from sklearn.metrics import classification_report
 from imutils import paths
 import matplotlib.pyplot as plt
