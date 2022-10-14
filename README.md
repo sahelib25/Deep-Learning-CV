@@ -1,4 +1,4 @@
-# Deep-Learning
+# Deep-Learning-Classification Malaria cells
 The dataset of malaria cells used here is from NIH official website.
 The original dataset contains 27,588 images.
 This implementation is done using 100 images.
