@@ -1,0 +1,18 @@
+{
+  "test_accuracy": 0.9629898403483309,
+  "roc_auc_parasitized": 0.9901871410628097,
+  "n_test": 2756,
+  "confusion_matrix": [
+    [
+      1304,
+      67
+    ],
+    [
+      35,
+      1350
+    ]
+  ],
+  "img_size": 64,
+  "epochs": 25,
+  "split": "tfds malaria train[:80%] / [80%:90%] / [90%:]"
+}
