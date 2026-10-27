@@ -1,74 +1,74 @@
-# Malaria Cell Classification with a Residual Network (Keras)
+# Malaria Cell Classification with a Residual Network and Grad-CAM
 
-Binary classification of thin blood smear cell images as **Parasitized** or **Uninfected**, using a compact ResNet-style convolutional network in Keras. This was an early medical image analysis project, built while learning deep learning for computer vision.
+Binary classification of thin blood smear cell images as **parasitized** or **uninfected**, trained and evaluated on the full NIH Malaria Cell Images dataset, with Grad-CAM to inspect which image regions drive each prediction.
+
+**Test accuracy 96.3%, ROC AUC 0.990** on 2,756 held-out images.
 
 ## Credit
 
-This implementation follows the approach and code structure of Adrian Rosebrock's PyImageSearch tutorial, *Deep learning and medical image analysis with Keras* (2018), including the ResNet architecture class and the training pipeline. My work was reproducing the pipeline, training on a reduced subset of the data, and adapting the scripts for saving and reloading the model.
+The network architecture and training setup follow Adrian Rosebrock's PyImageSearch tutorial, *Deep learning and medical image analysis with Keras* (2018). My first version (in `legacy/`) reproduced that pipeline on a 100-image subset. This version ports the code to TensorFlow 2, trains on the full dataset with a fixed train/validation/test split, evaluates on a held-out test set, and adds Grad-CAM interpretability and an error analysis.
 
-## Dataset
+## Run it
 
-- **Source:** the NIH Malaria Cell Images dataset (27,558 segmented cell images, balanced between parasitized and uninfected), from the U.S. National Library of Medicine.
-- **Used here:** a subset of **100 images**, split into training, validation and testing folders.
+Open [`malaria_resnet_gradcam.ipynb`](malaria_resnet_gradcam.ipynb) in Google Colab, set the runtime to a GPU (Runtime → Change runtime type → T4 GPU), and choose Run all. The dataset downloads automatically through TensorFlow Datasets. Training takes about 20–40 minutes on a T4.
 
-Expected layout:
+## Data
 
-```
-malaria/
-├── training/
-│   ├── Parasitized/
-│   └── Uninfected/
-├── validation/
-│   ├── Parasitized/
-│   └── Uninfected/
-└── testing/
-    ├── Parasitized/
-    └── Uninfected/
-```
+- **Dataset:** NIH Malaria Cell Images (27,558 segmented red blood cell images, roughly balanced), loaded with `tfds.load("malaria")`.
+- **Split:** deterministic 80/10/10 into training (22,046), validation (2,756) and test (2,756). The test set is used once, at the end.
+- **Preprocessing:** images resized to 64×64 and scaled to [0, 1]. The training set is augmented with rotation, zoom, translation and horizontal flips.
 
-The splitting script is not included in this repository; any split into this folder layout works.
+## Model and training
 
-## Model
+A bottleneck ResNet (stages (2, 2, 3), filters (32, 64, 128, 256), L2 regularisation), as in the tutorial, with two changes:
 
-`resnet.py` defines a small residual network with bottleneck residual modules (1×1 → 3×3 → 1×1 convolutions with batch normalisation, ReLU and L2 regularisation):
+- global average pooling instead of a fixed 8×8 pool, so the model works at any input size;
+- categorical cross-entropy, the correct loss for a two-class softmax output (the original used binary cross-entropy).
 
-- Input: 64×64 RGB images
-- Stages: (2, 2, 3) residual modules with filters (32, 64, 128, 256)
-- Head: average pooling, then a softmax layer over the two classes
-
-## Training
-
-`save_model.py` trains and saves the network:
-
-- Optimiser: SGD with momentum 0.9, initial learning rate 0.1 with decay
-- 25 epochs, batch size 32
-- Training-time augmentation: rotation, zoom, shift, shear and horizontal flip
-- Prints a classification report on the test set, saves the model, and writes the loss and accuracy curves to `plot.png`
-
-```bash
-python save_model.py --dataset malaria --model saved_model.model
-```
-
-`load_model.py` reloads the trained model, classifies 16 random test images and shows them as a labelled montage:
-
-```bash
-python load_model.py --images malaria/testing --model saved_model.model
-```
+Trained for 25 epochs with SGD (momentum 0.9, learning rate 0.1 with cosine decay), batch size 32. The checkpoint with the best validation accuracy is used for testing.
 
 ## Results
 
-`plot.png` shows the training and validation curves for the 100-image run. With so little data, validation loss and accuracy are noisy from epoch to epoch, so this run should be read as a working pipeline rather than a reliable accuracy estimate. Training on the full dataset is needed for a meaningful test accuracy.
+| Metric | Value |
+|---|---|
+| Test accuracy | 96.3% |
+| ROC AUC (parasitized) | 0.990 |
+| Parasitized: recall / precision | 95.1% / 97.4% |
+| Uninfected: recall / precision | 97.5% / 95.3% |
 
-![Training and validation loss and accuracy](plot.png)
+Confusion matrix on the test set (n = 2,756):
 
-## Requirements
+| | Predicted parasitized | Predicted uninfected |
+|---|---|---|
+| **True parasitized** | 1,304 | 67 |
+| **True uninfected** | 35 | 1,350 |
 
-The code uses the standalone Keras 2.x API from around 2019 (for example `keras.layers.normalization`, `fit_generator` and the `lr` argument to `SGD`), so it needs an older environment, such as Python 3.6–3.7 with Keras 2.2 and TensorFlow 1.x. Other dependencies: scikit-learn, imutils, OpenCV, NumPy and Matplotlib.
+Errors lean towards **missed infections** (67 false negatives against 35 false positives), which is the more costly error in diagnosis.
 
-`save_model.py` imports the model with `from myfiles.resnet import ResNet`. Either place `resnet.py` in a `myfiles/` package or change the import to `from resnet import ResNet`.
+## Grad-CAM: what the model looks at
 
-## Possible extensions
+![Grad-CAM on test images](results/gradcam.png)
 
-- Train and evaluate on the full dataset with a fixed, reported test split
-- Update the code to TensorFlow 2 / Keras 3
-- Add interpretability, for example Grad-CAM maps showing which image regions drive each prediction
+Grad-CAM (Selvaraju et al., 2017) highlights the regions of the final feature maps that most increase the predicted class score.
+
+- **Correctly detected infections:** the heat falls on the stained parasite in each example, so the model is largely using the right evidence.
+- **Correctly identified uninfected cells:** the maps are broad and cover the cell interior, consistent with the model checking the whole cell and finding no parasite.
+- **Missed infections:** mostly pale, low-contrast cells where the parasite is faint.
+- **False positive:** in the example shown, the model responds to a stained blob outside the cell boundary, which suggests it has partly learned "purple stain" rather than "parasite".
+- **Possible label noise:** some cells labelled parasitized show no visible parasite, so part of the error may come from the labels rather than the model.
+
+At 64×64 the final feature map is only 8×8, so the maps are coarse.
+
+## Next steps
+
+- Retrain at 128×128 for sharper Grad-CAM maps, and compare accuracy
+- Review the misclassified images for label errors
+- Test robustness to stain colour variation, for example with stain or colour augmentation
+
+## Repository layout
+
+```
+malaria_resnet_gradcam.ipynb   training, evaluation and Grad-CAM (TensorFlow 2, Colab)
+results/                       test metrics and figures
+legacy/                        original Keras scripts (100-image subset)
+```
